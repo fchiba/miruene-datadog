@@ -73,13 +73,12 @@ class EchonetLite(object):
     class Response:
         def __init__(self, line):
             self._line = line
+            self._res = None
             if line.startswith("ERXUDP"):
                 self._res = line.split(' ')[-1]
 
         def is_valid_response(self):
-            if hasattr(self, '_res'):
-                return False
-            elif self._res is None:
+            if self._res is None:
                 return False
             elif not (self.seoj == EchonetLite.smart_meter() and self.esv == EchonetLite.ESV.GET_RES):
                 return False
