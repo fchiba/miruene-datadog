@@ -183,19 +183,20 @@ class WiSunDevice(object):
         self.pan_ipv6addr = self._ser.readline().strip()
         self.log.info('Connect to { Channel: %s, Pan ID: %s, IPv6Addr: %s }' % (self.pan_info['Channel'], self.pan_info['Pan ID'], self.pan_ipv6addr))
 
-    def polling_power_consumption(self):
+    def polling_power_consumption(self, interval):
+        errcnt = 0
         while True:
             try:
                 yield int(wsdev._get_current_power_consumption())
                 errcnt = 0
                 time.sleep(interval)
-            except KeyboardInterrupt:
-                break
-            except StandardError:
+            except KeyboardInterrupt as e:
+                raise e
+            except StandardError as error:
                 self.log.error(traceback.print_exc())
                 errcnt += 1
-                if errcnt > 100:
-                    break
+                if errcnt > 10:
+                    raise error
 
     def close(self):
         self._ser.reset_input_buffer()
@@ -234,12 +235,7 @@ class WiSunDevice(object):
         return "\n".join(lines).strip()
 
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-
-    inifile = ConfigParser.SafeConfigParser()
-    inifile.read(os.path.normpath(os.path.join(os.path.abspath(__file__), '../config.ini')))
-
+def init_wsdev(inifile):
     wsdev = WiSunDevice(inifile.get('General', 'com_port'))
     wsdev.timeout = 2
     wsdev.log.info('SKVER: %s' % wsdev.skver())
@@ -249,17 +245,41 @@ if __name__ == '__main__':
     wsdev.skjoin()
 
     wsdev.timeout = 2
+    
+    return wsdev
+    
 
-    errcnt = 0
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+
+    inifile = ConfigParser.SafeConfigParser()
+    inifile.read(os.path.normpath(os.path.join(os.path.abspath(__file__), '../config.ini')))
+
     try:
         interval = int(inifile.get('General', 'interval'))
     except ValueError:
         interval = 10
         wsdev.log.warn('invalid interval %s. use default interval: 10' % inifile.get('General', 'interval'))
 
-    for power in wsdev.polling_power_consumption():
-        statsd.gauge('power', power)
+    wsdev = None
+    while True:
+        errcnt = 0
+        try:
+            wsdev = init_wsdev(inifile)
+
+            for power in wsdev.polling_power_consumption(interval):
+                statsd.gauge('power', power)
+                errcnt = 0
+        except KeyboardInterrupt:
+            break
+        except StandardError:
+            errcnt += 1
+            if errcnt > 10:
+                self.log.error(traceback.print_exc())
+                break
 
     # TODO systemd終了時に実行できないので、やり方を考える
-    wsdev.close()
+    if not wsdev is None:
+        wsdev.close()
     sys.exit(0)
