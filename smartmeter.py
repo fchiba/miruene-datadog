@@ -102,7 +102,7 @@ class EchonetLite(object):
 
 
 class WiSunDevice(object):
-    MAX_ROW = 100
+    MAX_ROW = 20
 
     def __init__(self, serialPortDev, baudrate=115200):
         self.log = logging.getLogger(__name__)
@@ -192,7 +192,7 @@ class WiSunDevice(object):
                 time.sleep(interval)
             except KeyboardInterrupt as e:
                 raise e
-            except StandardError as error:
+            except Exception as error:
                 self.log.error(traceback.print_exc())
                 errcnt += 1
                 if errcnt > 10:
@@ -212,6 +212,7 @@ class WiSunDevice(object):
             if resp.is_valid_response() and resp.epc == EchonetLite.EPC.CUR_PW:
                 self.log.info(u"瞬時電力計測値:{0}[W]".format(resp.value))
                 return resp.value
+        raise Exception("no response")
 
     def _command(self, command):
         self.log.debug("%s:" % command)
@@ -251,7 +252,8 @@ def init_wsdev(inifile):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
+    log = logging.getLogger(__name__)
 
     inifile = ConfigParser.SafeConfigParser()
     inifile.read(os.path.normpath(os.path.join(os.path.abspath(__file__), '../config.ini')))
@@ -259,7 +261,7 @@ if __name__ == '__main__':
     try:
         interval = int(inifile.get('General', 'interval'))
     except ValueError:
-        interval = 10
+        interval = 30
         wsdev.log.warn('invalid interval %s. use default interval: 10' % inifile.get('General', 'interval'))
 
     wsdev = None
@@ -273,10 +275,11 @@ if __name__ == '__main__':
                 errcnt = 0
         except KeyboardInterrupt:
             break
-        except StandardError:
+        except Exception as error:
+            log.error(str(error))
+            log.error(traceback.print_exc())
             errcnt += 1
             if errcnt > 10:
-                self.log.error(traceback.print_exc())
                 break
 
     # TODO systemd終了時に実行できないので、やり方を考える
